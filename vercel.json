@@ -1,0 +1,2 @@
+{ "buildCommand": "python -m src.dashboard && cp dashboard.html public/index.html",
+  "outputDirectory": "public", "framework": null }

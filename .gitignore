@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/processed/*.parquet
+data/raw/
+results/*.joblib
+results/*.parquet
+err.log
+.cursor/
+agent-tools/

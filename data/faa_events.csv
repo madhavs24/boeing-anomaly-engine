@@ -1,0 +1,11 @@
+event_date,event_type,description
+2019-03-13,grounding,737 MAX worldwide grounding after Ethiopian Airlines crash
+2019-07-24,production_cap,FAA announces reduced 737 MAX production rate
+2020-01-09,production_halt,Boeing suspends 737 MAX production
+2020-05-27,ungrounding_process,FAA begins 737 MAX recertification flight testing
+2020-11-18,certification,737 MAX ungrounded by FAA
+2021-01-07,production_cap,FAA approves 737 MAX production resumption with cap
+2022-09-19,production_cap,FAA increases 737 production cap to 38/month
+2024-01-06,incident,737 MAX 9 door-plug blowout on Alaska Airlines flight 1282
+2024-01-12,production_cap,FAA caps 737 MAX production at 38/month pending quality review
+2024-07-01,certification,737 MAX 7 and 10 certification timeline extended by FAA

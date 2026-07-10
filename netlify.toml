@@ -1,0 +1,3 @@
+# Static deploy of the snapshot dashboard. Publish the /public folder.
+[build]
+  publish = "public"

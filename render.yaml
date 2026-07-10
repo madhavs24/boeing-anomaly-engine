@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: boeing-monitor
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python -m src.serve"
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+
+  # Daily auto-refresh: pull fresh Boeing data, retrain models, rebuild dashboard.
+  - type: cron
+    name: boeing-daily-refresh
+    runtime: python
+    plan: free
+    schedule: "0 22 * * 1-5"          # 22:00 UTC on weekdays (after US close)
+    buildCommand: "pip install -r requirements.txt"
+    command: "python -m src.refresh"
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"

@@ -1,0 +1,37 @@
+# Boeing Anomaly Engine — configuration
+target: BA
+
+# Sector / peers used to compute the idiosyncratic residual and relative-strength spreads.
+# (Yahoo symbols. EADSY = Airbus ADR.)
+sector_etf: ITA
+market: SPY
+peers: [RTX, GE, EADSY, LMT, NOC]
+
+# Macro series.
+#   yahoo: pulled from Yahoo chart API (^ = index)
+#   fred : pulled from FRED CSV endpoint (no key needed)
+macro_yahoo:
+  USO: oil_etf       # WTI oil proxy
+  "^VIX": vix        # market fear
+  "^TNX": y10x10     # 10y yield *10 (we divide by 10)
+fred:
+  DCOILWTICO: oil    # WTI spot
+  DGS10: y10         # 10y treasury
+  DTWEXBGS: dollar   # broad dollar index
+  BAMLH0A0HYM2: hy_oas  # high-yield credit spread
+fred_fallback_yahoo:
+  DCOILWTICO: CL=F
+  DTWEXBGS: DX-Y.NYB
+  # BAMLH0A0HYM2: HYG/LQD ratio proxy (see data.py _hy_oas_proxy)
+
+use_operational: true
+use_options_iv: true
+use_regime: true
+history_years: 10
+anomaly_alpha: 0.01     # per-detector false-alarm rate (conformal p-value / contamination)
+anomaly_alpha_by_regime:
+  calm: 0.005
+  stress: 0.01
+  crisis: 0.02
+anomaly_min_votes: 2    # how many detectors must agree to raise a flag (1=early-warning, 2=high-confidence)
+vol_horizon: 10         # days ahead for the volatility forecast (HARX best at 10d, R^2~0.56)

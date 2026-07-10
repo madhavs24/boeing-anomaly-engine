@@ -1,0 +1,26 @@
+{
+  "volatility": {
+    "best": {
+      "model": "harx",
+      "horizon": 10,
+      "r2": 0.558
+    },
+    "naive_r2": 0.163,
+    "edge_over_naive": 0.395
+  },
+  "direction": {
+    "model": "logit",
+    "feature_set": "full",
+    "auc": 0.502,
+    "accuracy": 0.497,
+    "beats_baseline": false
+  },
+  "anomaly": {
+    "config": "conformal",
+    "alpha": 0.005,
+    "min_votes": 1,
+    "recall": 0.176,
+    "flag_rate": 0.0028,
+    "score": 0.606
+  }
+}
