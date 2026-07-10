@@ -12,7 +12,7 @@ def main():
     panel = data.get_panel("live")                 # network needed (host/your machine)
     print(f"refreshed panel: {panel.shape}, through {panel.index[-1].date()}")
     cache.train_and_cache(build_features(panel))    # retrain on the fresh data
-    dashboard.build("cached")                        # regenerate the static snapshot
+    dashboard.build(mode="cached")                     # regenerate the static snapshot
     print("refresh complete: models + dashboard updated")
 
 
