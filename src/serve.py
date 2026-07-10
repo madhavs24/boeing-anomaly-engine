@@ -17,21 +17,27 @@ _READY = {"ok": False, "msg": "starting"}
 
 
 def _ensure():
-    """On boot: make sure a data panel, trained models, and dashboard.html all exist."""
+    """On boot: serve dashboard immediately; train models in the background if missing."""
+    dash = ROOT / "dashboard.html"
+    if dash.exists():
+        _READY.update(ok=True, msg="ready")
     try:
         from . import data, cache
         if not (RESULTS / "models.joblib").exists():
-            # prefer real data if reachable (host has internet), else cached, else synthetic
+            _READY.update(msg="training models")
             try:
                 data.get_panel("live")
             except Exception:
                 pass
             cache.train_and_cache()
-        if not (ROOT / "dashboard.html").exists():
-            dashboard.build()
+        if not dash.exists():
+            dashboard.build(mode="cached")
         _READY.update(ok=True, msg="ready")
     except Exception as e:
-        _READY.update(ok=False, msg=f"boot error: {e}")
+        if dash.exists():
+            _READY.update(ok=True, msg=f"ready (api warming: {e})")
+        else:
+            _READY.update(ok=False, msg=f"boot error: {e}")
 
 
 def _now():
@@ -44,9 +50,12 @@ def _now():
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def _send(self, body, ctype, code=200):
-        self.send_response(code); self.send_header("Content-Type", ctype)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+        try:
+            self.send_response(code); self.send_header("Content-Type", ctype)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+        except BrokenPipeError:
+            pass
 
     def do_GET(self):
         if self.path.startswith("/health"):
@@ -57,7 +66,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path in ("/", "/index.html", "/dashboard.html"):
             p = ROOT / "dashboard.html"
             if not p.exists():
-                dashboard.build()
+                dashboard.build(mode="cached")
             self._send(p.read_bytes(), "text/html; charset=utf-8"); return
         self._send(b"not found", "text/plain", 404)
 
@@ -65,6 +74,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 def main():
+    if (ROOT / "dashboard.html").exists():
+        _READY.update(ok=True, msg="ready")
     threading.Thread(target=_ensure, daemon=True).start()   # self-heal without blocking bind
     print(f"Boeing monitor on http://0.0.0.0:{PORT}  (/, /api/now, /health)")
     socketserver.TCPServer.allow_reuse_address = True
