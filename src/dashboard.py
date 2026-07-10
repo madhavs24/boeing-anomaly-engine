@@ -43,6 +43,41 @@ def build(mode="cached", out_path=None):
         if len(fut): ev_pts.append({"x": fut[0].strftime("%Y-%m-%d"),
                                     "y": round(float(anom.loc[fut[0], "price"]), 2), "desc": desc})
     last = anom.dropna(subset=["price"]).iloc[-1]
+
+    # ---- industry signals (context only — excluded from the model per A/B results) ----
+    demand_pl = op_pl = news_pl = None
+    try:
+        from .demand import demand_features
+        dm = demand_features(feats.index, allow_synthetic=False)
+        if dm is not None and dm["demand_yoy"].notna().any():
+            dmi = dm.reindex(idx)
+            demand_pl = {"yoy": [None if pd.isna(v) else round(float(v), 3) for v in dmi["demand_yoy"]]}
+    except Exception:
+        pass
+    try:
+        try:
+            from .edgar import operational_features, OP_FEATS
+        except ImportError:
+            from .operational import operational_features, OP_FEATS
+        op = operational_features(feats.index)
+        if op is not None and op[OP_FEATS].notna().any().any():
+            ol = op.dropna(subset=["op_revenue_yoy"]).iloc[-1]
+            op_pl = {"revenue_yoy": round(float(ol["op_revenue_yoy"]), 3),
+                     "ocf_bn": (round(float(ol["op_ocf"]), 2) if pd.notna(ol.get("op_ocf")) else None),
+                     "days_since": (int(ol["op_days_since"]) if pd.notna(ol.get("op_days_since")) else None)}
+    except Exception:
+        pass
+    try:
+        from .news import news_features
+        nw = news_features(feats.index)
+        if nw is not None and nw["news_sent"].notna().any():
+            nwi = nw.reindex(idx)
+            nl = nw.dropna(subset=["news_sent"]).iloc[-1]
+            news_pl = {"sent": [None if pd.isna(v) else round(float(v), 3) for v in nwi["news_sent"]],
+                       "latest": round(float(nl["news_sent"]), 3)}
+    except Exception:
+        pass
+
     payload = {
         "as_of": dates[-1], "rows": len(feats),
         "today": {"votes": int(last["votes"]), "resid_z": round(float(last["resid_z"]), 2),
@@ -57,6 +92,7 @@ def build(mode="cached", out_path=None):
         "dd_bh": [round(float(x) * 100, 1) for x in dd["buy_hold"].reindex(idx)],
         "dd_dr": [round(float(x) * 100, 1) for x in dd["derisk_anomaly"].reindex(idx)],
         "stats": bt.reset_index().rename(columns={"index": "strategy"}).to_dict("records"),
+        "demand": demand_pl, "operational": op_pl, "news": news_pl,
     }
     html = _TEMPLATE.replace("/*DATA*/", json.dumps(payload, default=str))
     out_path = out_path or (ROOT / "dashboard.html")
@@ -92,6 +128,11 @@ canvas{max-width:100%}
 <div class="sec"><h2>Anomaly timeline</h2><p class="d">Price with detected anomalies (red) and real Boeing events (amber triangles). Hover for detail.</p><div class="chart-wrap"><div class="chart-tools"><button type="button" data-chart="ts" data-zoom="in" title="Zoom in">+</button><button type="button" data-chart="ts" data-zoom="out" title="Zoom out">−</button><button type="button" data-chart="ts" data-zoom="reset" title="Reset zoom">Reset</button><span class="chart-hint">Scroll or pinch to zoom · drag to pan</span></div><canvas id="ts" height="300"></canvas></div></div>
 <div class="sec"><h2>Flare probability (calibrated) — "abnormal move in next 5 days"</h2><p class="d">Walk-forward, isotonic-calibrated. Higher = elevated near-term risk.</p><div class="chart-wrap"><div class="chart-tools"><button type="button" data-chart="flare" data-zoom="in" title="Zoom in">+</button><button type="button" data-chart="flare" data-zoom="out" title="Zoom out">−</button><button type="button" data-chart="flare" data-zoom="reset" title="Reset zoom">Reset</button><span class="chart-hint">Scroll or pinch to zoom · drag to pan</span></div><canvas id="flare" height="170"></canvas></div></div>
 <div class="sec"><h2>Risk management — $10k since 2016</h2><p class="d">Stepping to cash for 5 days after each anomaly vs buy &amp; hold (causal, 5 bps costs).</p><div class="chart-wrap"><div class="chart-tools"><button type="button" data-chart="eq" data-zoom="in" title="Zoom in">+</button><button type="button" data-chart="eq" data-zoom="out" title="Zoom out">−</button><button type="button" data-chart="eq" data-zoom="reset" title="Reset zoom">Reset</button><span class="chart-hint">Scroll or pinch to zoom · drag to pan</span></div><canvas id="eq" height="220"></canvas></div><div class="chart-wrap" style="margin-top:10px"><div class="chart-tools"><button type="button" data-chart="ddc" data-zoom="in" title="Zoom in">+</button><button type="button" data-chart="ddc" data-zoom="out" title="Zoom out">−</button><button type="button" data-chart="ddc" data-zoom="reset" title="Reset zoom">Reset</button><span class="chart-hint">Scroll or pinch to zoom · drag to pan</span></div><canvas id="ddc" height="150"></canvas></div></div>
+<div class="sec" id="industry" style="display:none"><h2>Industry signals (context — not used by the model)</h2><p class="d">Live industry data: TSA air-travel demand, SEC EDGAR fundamentals, and news sentiment. Shown for context — excluded from the model because they failed the A/B robustness test (see NEW_FEATURES.md).</p>
+<div class="cards" id="opcards" style="display:none"></div>
+<div class="chart-wrap" id="demandwrap" style="display:none"><div class="chart-tools"><button type="button" data-chart="demand" data-zoom="in" title="Zoom in">+</button><button type="button" data-chart="demand" data-zoom="out" title="Zoom out">−</button><button type="button" data-chart="demand" data-zoom="reset" title="Reset zoom">Reset</button><span class="chart-hint">TSA passengers vs same day last year · scroll to zoom</span></div><canvas id="demand" height="170"></canvas></div>
+<div class="chart-wrap" id="newswrap" style="display:none;margin-top:10px"><div class="chart-tools"><button type="button" data-chart="newsc" data-zoom="in" title="Zoom in">+</button><button type="button" data-chart="newsc" data-zoom="out" title="Zoom out">−</button><button type="button" data-chart="newsc" data-zoom="reset" title="Reset zoom">Reset</button><span class="chart-hint">FinBERT headline sentiment (−1 to +1) · scroll to zoom</span></div><canvas id="newsc" height="150"></canvas></div>
+</div>
 <div class="sec"><h2>Strategy stats</h2><table id="stats"></table><div class="foot" style="margin-top:8px">Research/education only. Not investment advice. No real trades.</div></div>
 </div>
 <script>
@@ -156,6 +197,32 @@ CHARTS.ddc=new Chart(document.getElementById('ddc'),{type:'line',data:{labels:D.
  {label:'DD buy&hold',data:D.dd_bh,borderColor:'#94a0bd',borderWidth:1,pointRadius:0,fill:true,backgroundColor:'rgba(148,160,189,.10)'},
  {label:'DD derisk',data:D.dd_dr,borderColor:'#37d39b',borderWidth:1,pointRadius:0,fill:true,backgroundColor:'rgba(55,211,155,.12)'}]},
  options:{plugins:{legend:{labels:{color:'#94a0bd'}},zoom:ZOOM_OPTS},scales:{x:AX_X,y:AX_Y}}});
+
+// ---- industry signals (context only) ----
+if(D.demand||D.operational||D.news){
+ document.getElementById('industry').style.display='block';
+ if(D.operational){
+  const o=D.operational;
+  document.getElementById('opcards').style.display='grid';
+  document.getElementById('opcards').innerHTML=[
+   {l:'Revenue YoY (SEC)',v:(o.revenue_yoy*100).toFixed(1)+'%',n:'latest 10-Q/10-K'},
+   {l:'Op. cash flow',v:o.ocf_bn!=null?('$'+o.ocf_bn+'B'):'—',n:'quarterly, EDGAR'},
+   {l:'Days since filing',v:o.days_since!=null?o.days_since:'—',n:'report recency'},
+  ].map(c=>`<div class="card"><div class="lab">${c.l}</div><div class="val">${c.v}</div><div class="note">${c.n}</div></div>`).join('');
+ }
+ if(D.demand){
+  document.getElementById('demandwrap').style.display='block';
+  CHARTS.demand=new Chart(document.getElementById('demand'),{type:'line',data:{labels:D.dates,datasets:[
+   {label:'TSA demand YoY',data:D.demand.yoy,borderColor:'#4da3ff',borderWidth:1.1,pointRadius:0,fill:true,backgroundColor:'rgba(77,163,255,.10)'}]},
+   options:{plugins:{legend:{display:false},zoom:ZOOM_OPTS},scales:{x:AX_X,y:AX_Y}}});
+ }
+ if(D.news){
+  document.getElementById('newswrap').style.display='block';
+  CHARTS.newsc=new Chart(document.getElementById('newsc'),{type:'line',data:{labels:D.dates,datasets:[
+   {label:'News sentiment',data:D.news.sent,borderColor:'#ffb454',borderWidth:1.2,pointRadius:0,spanGaps:false}]},
+   options:{plugins:{legend:{display:false},zoom:ZOOM_OPTS},scales:{x:AX_X,y:{...AX_Y,min:-1,max:1}}}});
+ }
+}
 
 document.querySelectorAll('[data-zoom]').forEach(btn=>btn.addEventListener('click',()=>{
  const ch=CHARTS[btn.dataset.chart]; if(!ch) return;

@@ -1,97 +1,154 @@
-"""News + sentiment layer (the one input with real literature support for a few points of
-directional lift). Pulls Boeing headlines from Finnhub (free tier) and scores them with
-FinBERT, producing daily features: mean sentiment, news volume, negative-headline share.
+"""News + sentiment features (Idea #9) — 100% FREE, no API key required.
 
-Setup (one time):
-  1. Get a free key at https://finnhub.io  ->  set env var:  FINNHUB_API_KEY=xxxx
-  2. pip install transformers torch    (FinBERT)   -- optional but recommended
-  3. python -m src.news               # caches results/news_features.parquet
+Sources (tried in order, all free):
+  1. Yahoo Finance RSS headlines for BA         (no key)
+  2. Google News RSS for "Boeing"               (no key)
+  3. Finnhub company-news (only if FINNHUB_API_KEY is set — optional)
+Scoring: FinBERT (ProsusAI/finbert via transformers) if installed, else a finance lexicon.
 
-Without a key/transformers this module no-ops (returns None) so the rest of the engine still
-runs. With them, pass the features into direction_pro.honest_direction(news=...).
+Daily CAUSAL features (yesterday's news predicts today -> shift(1)):
+  news_sent        mean headline sentiment [-1,1]
+  news_vol_z       z-score of daily headline count (attention spike)
+  news_neg_share   fraction of clearly-negative headlines
 
-NOTE: Finnhub free tier returns ~1 year of company news, so the sentiment features cover the
-recent window only; older history will be NaN (handled downstream).
+RSS only returns RECENT headlines, so history is shallow; features are NaN before coverage
+starts (handled downstream). For deep history, add an archived-news source later.
+
+    python -m src.news
 """
 from __future__ import annotations
-import os, time, datetime as dt
-import numpy as np
-import pandas as pd
-import requests
-from .util import RESULTS, load_config, log
+import os, re, datetime as dt
+import numpy as np, pandas as pd, requests
+from xml.etree import ElementTree as ET
+from .util import PROC, log
 
-FINNHUB = "https://finnhub.io/api/v1/company-news"
-CACHE = RESULTS / "news_features.parquet"
+UA = {"User-Agent": "Mozilla/5.0"}
+CACHE = PROC / "news.parquet"
+CACHE_DAILY = PROC / "news_daily.parquet"
+CACHE_MAX_AGE_DAYS = 1
+RSS = [
+    "https://feeds.finance.yahoo.com/rss/2.0/headline?s=BA&region=US&lang=en-US",
+    "https://news.google.com/rss/search?q=Boeing%20when:400d&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=Boeing+737%20when:400d&hl=en-US&gl=US&ceid=US:en",
+]
+POS = {"beat", "surge", "win", "approval", "record", "profit", "upgrade", "deal", "order",
+       "delivery", "rebound", "recovery", "certified", "resume"}
+NEG = {"crash", "grounded", "halt", "probe", "strike", "loss", "cut", "delay", "fine", "fall",
+       "plunge", "defect", "charge", "lawsuit", "fraud", "recall", "whistleblower", "fault"}
+_FINBERT = None
 
 
-def _fetch_headlines(symbol, days=365, key=None):
-    key = key or os.environ.get("FINNHUB_API_KEY")
+def _rss(url):
+    try:
+        r = requests.get(url, headers=UA, timeout=15); r.raise_for_status()
+        root = ET.fromstring(r.content); rows = []
+        for it in root.iter("item"):
+            title = (it.findtext("title") or "").strip()
+            pub = it.findtext("pubDate") or ""
+            try:
+                ts = pd.to_datetime(pub, utc=True).tz_localize(None)
+            except Exception:
+                ts = pd.Timestamp.today().normalize()
+            if title:
+                rows.append((ts, title))
+        return rows
+    except Exception as e:
+        log(f"RSS failed ({url[:40]}...): {e}"); return []
+
+
+def _finnhub():
+    key = os.environ.get("FINNHUB_API_KEY")
     if not key:
-        log("no FINNHUB_API_KEY set — news layer disabled"); return None
-    end = dt.date.today(); rows = []
-    # Finnhub caps each call's range; walk back in ~monthly chunks
-    for back in range(0, days, 30):
+        return []
+    rows = []; end = dt.date.today()
+    for back in range(0, 365, 30):
         to = end - dt.timedelta(days=back); frm = to - dt.timedelta(days=30)
         try:
-            r = requests.get(FINNHUB, params={"symbol": symbol, "from": frm.isoformat(),
-                                              "to": to.isoformat(), "token": key}, timeout=15)
-            r.raise_for_status()
+            r = requests.get("https://finnhub.io/api/v1/company-news",
+                             params={"symbol": "BA", "from": frm.isoformat(), "to": to.isoformat(),
+                                     "token": key}, timeout=15); r.raise_for_status()
             for a in r.json():
-                rows.append({"ts": pd.to_datetime(a["datetime"], unit="s"),
-                             "headline": a.get("headline", "")})
-            time.sleep(0.3)
-        except Exception as e:
-            log(f"finnhub chunk failed: {e}")
-    return pd.DataFrame(rows) if rows else None
+                rows.append((pd.to_datetime(a["datetime"], unit="s"), a.get("headline", "")))
+        except Exception:
+            pass
+    return rows
 
 
-def _finbert_scores(texts):
-    """Return P(positive)-P(negative) per text in [-1,1]. Falls back to a lexicon if no model."""
-    try:
+def _finbert():
+    global _FINBERT
+    if _FINBERT is None:
         from transformers import pipeline
-        clf = pipeline("text-classification", model="ProsusAI/finbert", top_k=None, truncation=True)
+        _FINBERT = pipeline("text-classification", model="ProsusAI/finbert", top_k=None, truncation=True)
+    return _FINBERT
+
+
+def _score(texts):
+    try:
+        clf = _finbert()
         out = []
         for t in texts:
-            scores = {d["label"].lower(): d["score"] for d in clf(t[:512])[0]}
-            out.append(scores.get("positive", 0) - scores.get("negative", 0))
+            sc = {d["label"].lower(): d["score"] for d in clf(t[:512])[0]}
+            out.append(sc.get("positive", 0) - sc.get("negative", 0))
+        log("news scored with FinBERT")
         return np.array(out)
-    except Exception as e:
-        log(f"FinBERT unavailable ({e}); using simple lexicon fallback")
-        POS = {"beat", "surge", "win", "approval", "record", "profit", "upgrade", "deal", "order"}
-        NEG = {"crash", "grounded", "halt", "probe", "strike", "loss", "cut", "delay", "fine", "fall", "plunge"}
+    except Exception:
+        log("FinBERT not installed — using finance lexicon")
         out = []
         for t in texts:
-            w = set(t.lower().split())
-            out.append((len(w & POS) - len(w & NEG)) / max(1, len(w & (POS | NEG))))
+            w = set(re.findall(r"[a-z]+", t.lower()))
+            p, n = len(w & POS), len(w & NEG)
+            out.append((p - n) / max(1, p + n))
         return np.array(out)
 
 
-def build_news_features(symbol=None, days=365) -> pd.DataFrame | None:
-    cfg = load_config(); symbol = symbol or cfg["target"]
-    df = _fetch_headlines(symbol, days)
-    if df is None or df.empty:
+def _fetch_daily() -> pd.DataFrame | None:
+    rows = []
+    for u in RSS:
+        rows += _rss(u)
+    rows += _finnhub()
+    if not rows:
         return None
-    df["sent"] = _finbert_scores(df["headline"].tolist())
-    df["date"] = df["ts"].dt.normalize()
+    df = pd.DataFrame(rows, columns=["ts", "headline"]).dropna()
+    df["date"] = pd.to_datetime(df["ts"]).dt.normalize()
+    df = df.drop_duplicates(subset=["date", "headline"])
+    df["sent"] = _score(df["headline"].tolist())
     g = df.groupby("date")
-    feat = pd.DataFrame({
-        "news_sent": g["sent"].mean(),
-        "news_vol": g.size(),
-        "news_neg_share": g["sent"].apply(lambda s: float((s < -0.1).mean())),
-    })
-    feat["news_vol_z"] = (feat["news_vol"] - feat["news_vol"].rolling(20, min_periods=5).mean()) \
-        / (feat["news_vol"].rolling(20, min_periods=5).std() + 1e-9)
-    feat = feat.shift(1)                       # causal: yesterday's news predicts today
-    feat.to_parquet(CACHE); log(f"news features cached -> {CACHE} ({len(feat)} days)")
-    return feat
+    f = pd.DataFrame({"news_sent": g["sent"].mean(), "news_vol": g.size(),
+                      "news_neg_share": g["sent"].apply(lambda s: float((s < -0.1).mean()))})
+    f["news_vol_z"] = (f["news_vol"] - f["news_vol"].rolling(20, min_periods=5).mean()) \
+        / (f["news_vol"].rolling(20, min_periods=5).std() + 1e-9)
+    return f[["news_sent", "news_vol_z", "news_neg_share"]].shift(1)
 
 
-def load_news_features() -> pd.DataFrame | None:
-    if CACHE.exists():
-        return pd.read_parquet(CACHE)
-    return build_news_features()
+def _load_daily(max_age_days=CACHE_MAX_AGE_DAYS) -> pd.DataFrame | None:
+    if not CACHE_DAILY.exists():
+        return None
+    age = (pd.Timestamp.today() - pd.Timestamp(CACHE_DAILY.stat().st_mtime, unit="s")).days
+    if age > max_age_days:
+        return None
+    f = pd.read_parquet(CACHE_DAILY)
+    f.index = pd.to_datetime(f.index)
+    log(f"news loaded from cache ({len(f)} days, age {age}d)")
+    return f
+
+
+def news_features(index: pd.DatetimeIndex, force_refresh=False) -> pd.DataFrame | None:
+    daily = None if force_refresh else _load_daily()
+    if daily is None:
+        daily = _fetch_daily()
+        if daily is None:
+            log("no news fetched (offline?) — news features unavailable")
+            return _load_daily(max_age_days=10_000)
+        daily.to_parquet(CACHE_DAILY)
+    out = daily.reindex(index.union(daily.index)).sort_index().ffill(limit=5).reindex(index)
+    out.to_parquet(CACHE)
+    return out
+
+
+NEWS_FEATS = ["news_sent", "news_vol_z", "news_neg_share"]
 
 
 if __name__ == "__main__":
-    f = build_news_features()
-    print("no news features (set FINNHUB_API_KEY)" if f is None else f.tail())
+    idx = pd.bdate_range("2024-01-01", pd.Timestamp.today())
+    d = news_features(idx, force_refresh=True)
+    print(d.dropna().tail() if d is not None else "no news (need network)")
