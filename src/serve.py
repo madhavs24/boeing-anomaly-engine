@@ -8,12 +8,18 @@ Hosted:  gunicorn not needed; `python -m src.serve` binds 0.0.0.0:$PORT and self
 Endpoints:  /  (dashboard)   /api/now  (live prediction JSON)   /health  (readiness)
 """
 from __future__ import annotations
-import http.server, socketserver, json, os, threading
+import http.server, json, os, threading, time
 from .util import ROOT, RESULTS
 from . import dashboard
 
 PORT = int(os.environ.get("PORT", "8000"))
 _READY = {"ok": False, "msg": "starting"}
+# /api/now is expensive (full feature rebuild). Serve a cached result and refresh it in a
+# background thread so the web server never blocks — recomputing per request starved the
+# single-threaded server and got the instance killed by the host's health checks.
+NOW_TTL = 300
+_NOW = {"ts": 0.0, "data": None, "computing": False}
+_NOW_LOCK = threading.Lock()
 
 
 def _ensure():
@@ -33,6 +39,7 @@ def _ensure():
         if not dash.exists():
             dashboard.build(mode="cached")
         _READY.update(ok=True, msg="ready")
+        _compute_now()   # warm the /api/now cache so the first visitor gets live data
     except Exception as e:
         if dash.exists():
             _READY.update(ok=True, msg=f"ready (api warming: {e})")
@@ -40,12 +47,24 @@ def _ensure():
             _READY.update(ok=False, msg=f"boot error: {e}")
 
 
-def _now():
+def _compute_now():
     try:
         from . import cache
-        return cache.predict_now()
+        out = cache.predict_now()
     except Exception as e:
-        return {"error": str(e)[:160]}
+        out = {"error": str(e)[:160]}
+    with _NOW_LOCK:
+        _NOW.update(ts=time.time(), data=out, computing=False)
+
+
+def _now():
+    """Return the cached live prediction; kick off a background refresh if stale."""
+    with _NOW_LOCK:
+        stale = _NOW["data"] is None or (time.time() - _NOW["ts"]) > NOW_TTL
+        if stale and not _NOW["computing"]:
+            _NOW["computing"] = True
+            threading.Thread(target=_compute_now, daemon=True).start()
+        return _NOW["data"] or {"error": "warming up — models still loading, try again shortly"}
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -78,8 +97,9 @@ def main():
         _READY.update(ok=True, msg="ready")
     threading.Thread(target=_ensure, daemon=True).start()   # self-heal without blocking bind
     print(f"Boeing monitor on http://0.0.0.0:{PORT}  (/, /api/now, /health)")
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("0.0.0.0", PORT), Handler) as httpd:
+    # threaded server: slow requests must never block /health, or the host kills the instance
+    with http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler) as httpd:
+        httpd.daemon_threads = True
         httpd.serve_forever()
 
 
