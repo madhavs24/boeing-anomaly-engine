@@ -121,19 +121,32 @@ canvas{max-width:100%}
 .chart-wrap{position:relative}.chart-tools{display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap}
 .chart-tools button{background:var(--line);color:var(--ink);border:1px solid #334066;border-radius:6px;padding:4px 11px;font-size:13px;font-weight:600;cursor:pointer;line-height:1.2}
 .chart-tools button:hover{background:#334066}.chart-hint{color:var(--mut);font-size:11px;margin-left:2px}
+.q{border-bottom:1px dotted var(--mut);cursor:help}
+.guide{display:grid;gap:10px}.guide .g{display:flex;gap:10px;align-items:flex-start}.guide .ic{font-size:18px;line-height:1.3;flex:0 0 24px;text-align:center}
+.guide b{color:var(--ink)}.guide .g div{color:var(--mut);font-size:13px}
+details.sec summary{cursor:pointer;font-size:16px;font-weight:650;list-style:none;display:flex;justify-content:space-between;align-items:center}
+details.sec summary::after{content:'▸';color:var(--mut);transition:transform .15s}details.sec[open] summary::after{transform:rotate(90deg)}
 </style></head><body><div class="wrap">
 <h1>Boeing (BA) — Risk &amp; Anomaly Monitor</h1><div class="sub" id="sub"></div>
 <div class="sec" id="livebar" style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div id="liveinfo" style="font-size:14px">Live panel…</div><button id="refbtn" style="background:var(--acc);color:#06122b;border:0;border-radius:8px;padding:7px 14px;font-weight:600;cursor:pointer">Refresh</button></div>
+<details class="sec" open><summary>How to read this dashboard</summary>
+<div class="guide" style="margin-top:12px">
+<div class="g"><span class="ic">🟥</span><div><b>Anomalies (the math)</b> — days where Boeing's stock moved drastically differently from the rest of the aerospace sector — an "idiosyncratic" move that market-wide news can't explain. Three independent detectors vote; 2+ votes raises a flag.</div></div>
+<div class="g"><span class="ic">🔶</span><div><b>Events (the reality)</b> — curated dates of real, known Boeing incidents (737 MAX groundings, the door-plug blowout, DOJ charges…). We use these to grade the detector: did the math catch the real event?</div></div>
+<div class="g"><span class="ic">📈</span><div><b>Flare probability (the forecast)</b> — the model's estimate that Boeing will have an abnormal move <i>within the next 5 days</i>. This is the "predict the market" part: it forecasts risk (how bumpy), not direction (up vs down) — direction is honestly near a coin flip.</div></div>
+<div class="g"><span class="ic">💵</span><div><b>Risk management (the payoff)</b> — what happens to $10k if you simply step to cash for 5 days after each anomaly flag, vs holding through everything. Fewer deep losses is the goal.</div></div>
+</div></details>
 <div class="cards" id="cards"></div>
-<div class="sec"><h2>Anomaly timeline</h2><p class="d">Price with detected anomalies (red) and real Boeing events (amber triangles). Hover for detail.</p><div class="chart-wrap"><div class="chart-tools"><button type="button" data-chart="ts" data-zoom="in" title="Zoom in">+</button><button type="button" data-chart="ts" data-zoom="out" title="Zoom out">−</button><button type="button" data-chart="ts" data-zoom="reset" title="Reset zoom">Reset</button><span class="chart-hint">Scroll or pinch to zoom · drag to pan</span></div><canvas id="ts" height="300"></canvas></div></div>
-<div class="sec"><h2>Flare probability (calibrated) — "abnormal move in next 5 days"</h2><p class="d">Walk-forward, isotonic-calibrated. Higher = elevated near-term risk.</p><div class="chart-wrap"><div class="chart-tools"><button type="button" data-chart="flare" data-zoom="in" title="Zoom in">+</button><button type="button" data-chart="flare" data-zoom="out" title="Zoom out">−</button><button type="button" data-chart="flare" data-zoom="reset" title="Reset zoom">Reset</button><span class="chart-hint">Scroll or pinch to zoom · drag to pan</span></div><canvas id="flare" height="170"></canvas></div></div>
-<div class="sec"><h2>Risk management — $10k since 2016</h2><p class="d">Stepping to cash for 5 days after each anomaly vs buy &amp; hold (causal, 5 bps costs).</p><div class="chart-wrap"><div class="chart-tools"><button type="button" data-chart="eq" data-zoom="in" title="Zoom in">+</button><button type="button" data-chart="eq" data-zoom="out" title="Zoom out">−</button><button type="button" data-chart="eq" data-zoom="reset" title="Reset zoom">Reset</button><span class="chart-hint">Scroll or pinch to zoom · drag to pan</span></div><canvas id="eq" height="220"></canvas></div><div class="chart-wrap" style="margin-top:10px"><div class="chart-tools"><button type="button" data-chart="ddc" data-zoom="in" title="Zoom in">+</button><button type="button" data-chart="ddc" data-zoom="out" title="Zoom out">−</button><button type="button" data-chart="ddc" data-zoom="reset" title="Reset zoom">Reset</button><span class="chart-hint">Scroll or pinch to zoom · drag to pan</span></div><canvas id="ddc" height="150"></canvas></div></div>
+<div class="sec"><h2>Anomaly timeline — what we flagged vs what really happened</h2><p class="d">Boeing's price with days the math flagged as abnormal (red dots) and real, documented Boeing incidents (amber triangles). When a red dot sits near an amber triangle, the detector caught a real event. Hover any point for a plain-English explanation.</p><div class="chart-wrap"><div class="chart-tools"><button type="button" data-chart="ts" data-zoom="in" title="Zoom in">+</button><button type="button" data-chart="ts" data-zoom="out" title="Zoom out">−</button><button type="button" data-chart="ts" data-zoom="reset" title="Reset zoom">Reset</button><span class="chart-hint">Scroll or pinch to zoom · drag to pan</span></div><canvas id="ts" height="300"></canvas></div></div>
+<div class="sec"><h2>Flare probability — "will Boeing behave abnormally in the next 5 days?"</h2><p class="d">The model's forward-looking risk forecast. Higher = elevated chance of a big move soon. It predicts <b>risk</b> (how bumpy), not direction (up vs down) — daily direction is famously near a coin flip, and we don't pretend otherwise. Tested only on data the model had never seen (<span class="q" title="Walk-forward: the model is trained on the past only, predicts forward, then retrains — no peeking at the future. Calibrated: a 30% forecast really happens about 30% of the time.">how?</span>).</p><div class="chart-wrap"><div class="chart-tools"><button type="button" data-chart="flare" data-zoom="in" title="Zoom in">+</button><button type="button" data-chart="flare" data-zoom="out" title="Zoom out">−</button><button type="button" data-chart="flare" data-zoom="reset" title="Reset zoom">Reset</button><span class="chart-hint">Scroll or pinch to zoom · drag to pan</span></div><canvas id="flare" height="170"></canvas></div></div>
+<div class="sec"><h2>Risk management — what $10k since 2016 looks like</h2><p class="d">Green line: step to cash for 5 days after each anomaly flag, then get back in. Grey line: just hold through everything. The lower chart shows drawdowns — how far each approach fell from its peak. The value of the detector is avoiding the worst stretches, not predicting winners. Includes trading costs; uses only information available at the time.</p><div class="chart-wrap"><div class="chart-tools"><button type="button" data-chart="eq" data-zoom="in" title="Zoom in">+</button><button type="button" data-chart="eq" data-zoom="out" title="Zoom out">−</button><button type="button" data-chart="eq" data-zoom="reset" title="Reset zoom">Reset</button><span class="chart-hint">Scroll or pinch to zoom · drag to pan</span></div><canvas id="eq" height="220"></canvas></div><div class="chart-wrap" style="margin-top:10px"><div class="chart-tools"><button type="button" data-chart="ddc" data-zoom="in" title="Zoom in">+</button><button type="button" data-chart="ddc" data-zoom="out" title="Zoom out">−</button><button type="button" data-chart="ddc" data-zoom="reset" title="Reset zoom">Reset</button><span class="chart-hint">Scroll or pinch to zoom · drag to pan</span></div><canvas id="ddc" height="150"></canvas></div></div>
 <div class="sec" id="industry" style="display:none"><h2>Industry signals (context — not used by the model)</h2><p class="d">Live industry data: TSA air-travel demand, SEC EDGAR fundamentals, and news sentiment. Shown for context — excluded from the model because they failed the A/B robustness test (see NEW_FEATURES.md).</p>
 <div class="cards" id="opcards" style="display:none"></div>
 <div class="chart-wrap" id="demandwrap" style="display:none"><div class="chart-tools"><button type="button" data-chart="demand" data-zoom="in" title="Zoom in">+</button><button type="button" data-chart="demand" data-zoom="out" title="Zoom out">−</button><button type="button" data-chart="demand" data-zoom="reset" title="Reset zoom">Reset</button><span class="chart-hint">TSA passengers vs same day last year · scroll to zoom</span></div><canvas id="demand" height="170"></canvas></div>
 <div class="chart-wrap" id="newswrap" style="display:none;margin-top:10px"><div class="chart-tools"><button type="button" data-chart="newsc" data-zoom="in" title="Zoom in">+</button><button type="button" data-chart="newsc" data-zoom="out" title="Zoom out">−</button><button type="button" data-chart="newsc" data-zoom="reset" title="Reset zoom">Reset</button><span class="chart-hint">FinBERT headline sentiment (−1 to +1) · scroll to zoom</span></div><canvas id="newsc" height="150"></canvas></div>
 </div>
-<div class="sec"><h2>Strategy stats</h2><table id="stats"></table><div class="foot" style="margin-top:8px">Research/education only. Not investment advice. No real trades.</div></div>
+<div class="sec"><h2>Recent flags — why did the alarm ring?</h2><p class="d">The most recent anomaly flags and the primary reason each one fired.</p><table id="recent"></table></div>
+<div class="sec"><h2>Strategy stats — the numbers behind the chart above</h2><table id="stats"></table><div class="foot" style="margin-top:8px">Research/education only. Not investment advice. No real trades.</div></div>
 </div>
 <script>
 const D=/*DATA*/;
@@ -141,12 +154,18 @@ document.getElementById('sub').textContent=`As of ${D.as_of} · ${D.rows} tradin
 const t=D.today, ae=D.anom_eval, fm=D.flare_metrics, pa=D.precision_alerts;
 const warn=t.votes>=2;
 const cards=[
- {l:'Today',v:warn?'⚠ Anomaly':'Normal',n:`votes ${t.votes}/3 · resid_z ${t.resid_z}`,w:warn},
- {l:'Flare prob (5d)',v:t.flare_prob!=null?(Math.round(t.flare_prob*100)+'%'):'—',n:'calibrated'},
- {l:'Event recall',v:`${ae.events_caught}/${ae.n_events_known}`,n:`p=${ae.event_recall_vs_random_p} vs random`},
- {l:'Flare AUC',v:fm.auc,n:`Brier ${fm.brier}`},
- {l:'Alert precision (OOS)',v:pa.oos_precision!=null?Math.round(pa.oos_precision*100)+'%':'—',n:`${pa.alerts_per_year}/yr`},
- {l:'Alarm calibration',v:D.aci_rate,n:'adaptive-conformal rate (≈0.01)'},
+ {l:'Today',v:warn?'⚠ Anomaly':'Normal',n:warn?`${t.votes} of 3 detectors agree`:'behaving like its sector',w:warn,
+  q:'Three independent detectors each vote on whether today is abnormal. 2+ votes = anomaly.'},
+ {l:'Chance of abnormal move (5d)',v:t.flare_prob!=null?(Math.round(t.flare_prob*100)+'%'):'—',n:'model forecast, calibrated',
+  q:'Probability Boeing has an unusually large move within the next 5 trading days. Calibrated = 30% means it happens ~30% of the time.'},
+ {l:'Real events caught',v:`${ae.events_caught}/${ae.n_events_known}`,n:`better than luck (p=${ae.event_recall_vs_random_p})`,
+  q:'Of the known real Boeing incidents in our test set, how many did the detector flag within a few days? The p-value shows this beats random flagging.'},
+ {l:'Forecast skill (AUC)',v:fm.auc,n:'0.5 = guessing, 1.0 = perfect',
+  q:'AUC measures how well the flare forecast separates calm periods from abnormal ones. Anything reliably above 0.5 has real signal.'},
+ {l:'Alert precision (unseen data)',v:pa.oos_precision!=null?Math.round(pa.oos_precision*100)+'%':'—',n:`${pa.alerts_per_year} alerts/yr`,
+  q:'Of the highest-confidence alerts on data the model never trained on, how many were followed by a real abnormal move?'},
+ {l:'False-alarm control',v:D.aci_rate,n:'target ≈ 0.01 (1%)',
+  q:'The alarm threshold self-adjusts so that only ~1% of normal days trigger a false alarm, even when volatility regimes change.'},
 ];
 
 // ---- LIVE 'today' panel: poll /api/now (works under `python -m src.serve`); snapshot fallback ----
@@ -158,10 +177,14 @@ function renderLive(o,live){
   const rz=o.resid_z_today!=null?o.resid_z_today:D.today.resid_z;
   const tag=live?`<span style="color:var(--grn)">● LIVE</span>`:`<span style="color:var(--mut)">snapshot</span>`;
   const warn=sev>=2;
+  const story=warn
+    ? `<b style="color:var(--red)">⚠ Anomaly detected:</b> Boeing is behaving highly unusually vs its peers today — it moved <b>${Math.abs(rz)}</b> standard deviations away from what the sector and market predict. <b>${sev} of 3</b> independent detectors agree.`
+    : `<b style="color:var(--grn)">All clear:</b> Boeing is trading in line with the aerospace sector and the market (deviation ${rz}σ, below alarm level). <b>${sev} of 3</b> detectors see anything unusual.`;
   document.getElementById('liveinfo').innerHTML=
-    `${tag} &nbsp; <b>${o.as_of||D.as_of}</b> &nbsp;|&nbsp; status: <b style="color:${warn?'var(--red)':'var(--grn)'}">${warn?'⚠ ANOMALY':'normal'}</b> (votes ${sev}/3, resid_z ${rz}) `+
-    `&nbsp;|&nbsp; flare 5d: <b>${fmtPct(fp)}</b>`+(vf!=null?` &nbsp;|&nbsp; vol(10d): <b>${(vf*100).toFixed(1)}%</b>`:'')+
-    (o.latency_ms!=null?` &nbsp;<span style="color:var(--mut)">(${o.latency_ms} ms)</span>`:'');
+    `${tag} &nbsp; <b>${o.as_of||D.as_of}</b><br>${story}`+
+    `<br><span style="color:var(--mut)">Chance of an abnormal move in the next 5 days: <b style="color:var(--ink)">${fmtPct(fp)}</b>`+
+    (vf!=null?` · expected volatility (10d): <b style="color:var(--ink)">${(vf*100).toFixed(1)}%</b> annualized`:'')+`</span>`+
+    (o.latency_ms!=null?` <span style="color:var(--mut)">(${o.latency_ms} ms)</span>`:'');
 }
 function refreshLive(){
   fetch('/api/now',{cache:'no-store'}).then(r=>r.json()).then(o=>{
@@ -171,7 +194,7 @@ function refreshLive(){
 document.getElementById('refbtn').onclick=refreshLive;
 refreshLive(); setInterval(refreshLive,30000);
 
-document.getElementById('cards').innerHTML=cards.map(c=>`<div class="card"><div class="lab">${c.l}</div><div class="val" style="color:${c.w?'var(--red)':'var(--ink)'}">${c.v}</div><div class="note">${c.n}</div></div>`).join('');
+document.getElementById('cards').innerHTML=cards.map(c=>`<div class="card" title="${c.q||''}"><div class="lab">${c.l} <span class="q">?</span></div><div class="val" style="color:${c.w?'var(--red)':'var(--ink)'}">${c.v}</div><div class="note">${c.n}</div></div>`).join('');
 
 const CHARTS={};
 const ZOOM_OPTS={zoom:{wheel:{enabled:true,speed:.1},pinch:{enabled:true},mode:'x'},pan:{enabled:true,mode:'x'},limits:{x:{min:'original',max:'original'}}};
@@ -182,7 +205,10 @@ CHARTS.ts=new Chart(document.getElementById('ts'),{type:'line',data:{labels:D.da
  {label:'BA',data:D.price,borderColor:'#4da3ff',borderWidth:1.1,pointRadius:0,tension:.1},
  {label:'Anomaly',type:'scatter',data:D.flagged,backgroundColor:'#ff5c6c',pointRadius:4,parsing:false},
  {label:'Event',type:'scatter',data:D.events,backgroundColor:'#ffb454',pointStyle:'triangle',pointRadius:6,parsing:false}]},
- options:{interaction:{mode:'nearest',intersect:true},plugins:{legend:{labels:{color:'#94a0bd'}},tooltip:{callbacks:{label:c=>{const r=c.raw;if(r.desc!==undefined)return '★ '+r.desc;if(r.z!==undefined)return `Anomaly ${r.x} · resid_z ${r.z}`;return 'BA $'+c.formattedValue;}}},zoom:ZOOM_OPTS},scales:{x:AX_X,y:AX_Y}}});
+ options:{interaction:{mode:'nearest',intersect:true},plugins:{legend:{labels:{color:'#94a0bd'}},tooltip:{callbacks:{label:c=>{const r=c.raw;
+  if(r.desc!==undefined)return ['📌 Real Boeing event: '+r.desc,'(documented incident, used to grade the detector)'];
+  if(r.z!==undefined)return ['🚨 Anomaly flagged on '+r.x,`Boeing moved ${Math.abs(r.z)} standard deviations away from`, 'what the sector + market predicted that day', (Math.abs(r.z)>=3?'— an extreme idiosyncratic move.':'— unusual enough that 2+ detectors agreed.')];
+  return 'BA $'+c.formattedValue;}}},zoom:ZOOM_OPTS},scales:{x:AX_X,y:AX_Y}}});
 
 CHARTS.flare=new Chart(document.getElementById('flare'),{type:'line',data:{labels:D.dates,datasets:[
  {label:'Flare prob',data:D.flare_series,borderColor:'#ffb454',borderWidth:1,pointRadius:0,fill:true,backgroundColor:'rgba(255,180,84,.12)'}]},
@@ -230,8 +256,24 @@ document.querySelectorAll('[data-zoom]').forEach(btn=>btn.addEventListener('clic
  if(z==='in') ch.zoom(1.25); else if(z==='out') ch.zoom(0.8); else ch.resetZoom();
 }));
 
+// recent flags with plain-English driver
+function driver(z){
+ if(z==null)return 'multiple detectors agreed (volume/volatility pattern)';
+ const a=Math.abs(z);
+ const dir=z<0?'underperformed':'outperformed';
+ if(a>=3)return `extreme move: ${dir} the aerospace sector by ${a}σ`;
+ if(a>=2)return `sharp divergence: ${dir} the sector by ${a}σ`;
+ return `unusual volume/volatility pattern (deviation ${z}σ)`;
+}
+const recent=(D.flagged||[]).slice(-10).reverse();
+document.getElementById('recent').innerHTML='<tr><th>Date</th><th>BA price</th><th style="text-align:left">Primary driver</th></tr>'+
+ (recent.length?recent.map(r=>`<tr><td>${r.x}</td><td>$${r.y}</td><td style="text-align:left">${driver(r.z)}</td></tr>`).join('')
+  :'<tr><td colspan="3" style="color:var(--mut)">no flags in range</td></tr>');
+
 const cols=["strategy","CAGR_%","sharpe","sortino","max_drawdown_%","calmar","final_$","pct_invested"];
-document.getElementById('stats').innerHTML='<tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr>'+
+const colNames={strategy:'Strategy','CAGR_%':'Yearly return %',sharpe:'Sharpe',sortino:'Sortino','max_drawdown_%':'Worst loss %',calmar:'Calmar','final_$':'Final $','pct_invested':'% time invested'};
+const colHelp={strategy:'buy_hold = hold through everything. derisk_anomaly = step to cash after flags.','CAGR_%':'Average yearly growth rate.',sharpe:'Return per unit of risk. Higher is better; >1 is good.',sortino:'Like Sharpe but only penalizes downside swings.','max_drawdown_%':'Deepest fall from a previous peak — the pain metric.',calmar:'Yearly return divided by worst loss. Higher = better risk/reward.','final_$':'What $10k in 2016 became.','pct_invested':'Share of days the strategy held the stock.'};
+document.getElementById('stats').innerHTML='<tr>'+cols.map(c=>`<th title="${colHelp[c]||''}">${colNames[c]||c} <span class="q">?</span></th>`).join('')+'</tr>'+
  D.stats.map(r=>'<tr>'+cols.map(c=>`<td>${r[c]}</td>`).join('')+'</tr>').join('');
 </script></body></html>"""
 
