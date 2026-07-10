@@ -3,8 +3,10 @@ __pycache__/
 *.pyc
 .pytest_cache/
 data/processed/*.parquet
+!data/processed/panel.parquet
 data/raw/
 results/*.joblib
+!results/models.joblib
 results/*.parquet
 err.log
 .cursor/

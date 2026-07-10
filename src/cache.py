@@ -12,7 +12,7 @@ For genuine real-time use, call data.update_latest() (network, on your machine) 
 newest bars to panel.parquet, then predict_now() — the recompute is incremental and quick.
 """
 from __future__ import annotations
-import time, sys
+import time, sys, threading
 import numpy as np
 import pandas as pd
 import joblib
@@ -23,12 +23,27 @@ from .models import make_models, _meta_features, _target
 from . import anomaly as A
 
 CACHE = RESULTS / "models.joblib"
+_FEATS = {"ts": 0.0, "df": None}
+_FEATS_LOCK = threading.Lock()
+FEATS_TTL = 300
+
+
+def _get_feats(force=False):
+    """Reuse built features for a few minutes — rolling_residual rebuild takes ~30s."""
+    if not force:
+        with _FEATS_LOCK:
+            if _FEATS["df"] is not None and (time.time() - _FEATS["ts"]) < FEATS_TTL:
+                return _FEATS["df"]
+    from .data import get_panel
+    feats = build_features(get_panel("cached"))
+    with _FEATS_LOCK:
+        _FEATS.update(ts=time.time(), df=feats)
+    return feats
 
 
 def train_and_cache(feats=None):
     if feats is None:
-        from .data import get_panel
-        feats = build_features(get_panel("cached"))
+        feats = _get_feats(force=True)
     cfg = load_config(); alpha = float(cfg.get("anomaly_alpha", 0.01))
     F = rich_features(feats).join(_meta_features(feats))
     cols = [c for c in RICH if c in F.columns] + [c for c in _meta_features(feats).columns]
@@ -67,8 +82,7 @@ def predict_now(feats=None, blob=None):
     if blob is None:
         blob = joblib.load(CACHE)
     if feats is None:
-        from .data import get_panel
-        feats = build_features(get_panel("cached"))
+        feats = _get_feats()
     F = rich_features(feats).join(_meta_features(feats))
     row = F.iloc[[-1]]
     # flare probability

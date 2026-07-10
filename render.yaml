@@ -3,7 +3,7 @@ services:
     name: boeing-monitor
     runtime: python
     plan: free
-    buildCommand: "pip install -r requirements.txt"
+    buildCommand: "pip install -r requirements.txt && python -m src.data live && python -m src.cache train"
     startCommand: "python -m src.serve"
     envVars:
       - key: PYTHON_VERSION

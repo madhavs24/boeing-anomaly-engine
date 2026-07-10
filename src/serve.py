@@ -3,7 +3,7 @@
 
 Local:   python -m src.serve            -> http://localhost:8000
 Hosted:  gunicorn not needed; `python -m src.serve` binds 0.0.0.0:$PORT and self-heals on boot
-         (fetches data + trains models if missing, then serves).
+         (uses bundled panel/models when present; never blocks requests on heavy work).
 
 Endpoints:  /  (dashboard)   /api/now  (live prediction JSON)   /health  (readiness)
 """
@@ -20,24 +20,27 @@ _READY = {"ok": False, "msg": "starting"}
 NOW_TTL = 300
 _NOW = {"ts": 0.0, "data": None, "computing": False}
 _NOW_LOCK = threading.Lock()
+_TRAIN_LOCK = threading.Lock()
+_TRAINING = False
 
 
 def _ensure():
-    """On boot: serve dashboard immediately; train models in the background if missing."""
+    """On boot: serve dashboard immediately; train models in the background only if missing."""
+    global _TRAINING
     dash = ROOT / "dashboard.html"
     if dash.exists():
         _READY.update(ok=True, msg="ready")
     try:
-        from . import data, cache
+        from . import cache
         if not (RESULTS / "models.joblib").exists():
-            _READY.update(msg="training models")
-            try:
-                data.get_panel("live")
-            except Exception:
-                pass
-            cache.train_and_cache()
-        if not dash.exists():
-            dashboard.build(mode="cached")
+            with _TRAIN_LOCK:
+                _TRAINING = True
+                _READY.update(msg="training models")
+                try:
+                    # Use bundled/cached panel only — live fetch on boot OOMs the free tier.
+                    cache.train_and_cache()
+                finally:
+                    _TRAINING = False
         _READY.update(ok=True, msg="ready")
         _compute_now()   # warm the /api/now cache so the first visitor gets live data
     except Exception as e:
@@ -48,6 +51,8 @@ def _ensure():
 
 
 def _compute_now():
+    if _TRAINING:
+        return
     try:
         from . import cache
         out = cache.predict_now()
@@ -59,8 +64,12 @@ def _compute_now():
 
 def _now():
     """Return the cached live prediction; kick off a background refresh if stale."""
+    if _TRAINING:
+        return {"error": "warming up — models still loading, try again shortly"}
     with _NOW_LOCK:
-        stale = _NOW["data"] is None or (time.time() - _NOW["ts"]) > NOW_TTL
+        # retry errors quickly (e.g. models still training on boot); good results last NOW_TTL
+        ttl = 20 if (_NOW["data"] is None or "error" in (_NOW["data"] or {})) else NOW_TTL
+        stale = _NOW["data"] is None or (time.time() - _NOW["ts"]) > ttl
         if stale and not _NOW["computing"]:
             _NOW["computing"] = True
             threading.Thread(target=_compute_now, daemon=True).start()
@@ -85,7 +94,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path in ("/", "/index.html", "/dashboard.html"):
             p = ROOT / "dashboard.html"
             if not p.exists():
-                dashboard.build(mode="cached")
+                self._send(b"dashboard not ready", "text/plain", 503); return
             self._send(p.read_bytes(), "text/html; charset=utf-8"); return
         self._send(b"not found", "text/plain", 404)
 

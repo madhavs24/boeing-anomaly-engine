@@ -202,6 +202,7 @@ function renderLive(o,live){
     (o.latency_ms!=null?` <span style="color:var(--mut)">(${o.latency_ms} ms)</span>`:'');
 }
 function refreshLive(){
+  document.getElementById('liveinfo').innerHTML='<span style="color:var(--mut)">Loading live status…</span>';
   fetch('/api/now',{cache:'no-store'}).then(r=>r.json()).then(o=>{
     if(o.error){renderLive({},false);}else{renderLive(o,true);}
   }).catch(()=>renderLive({},false));
